@@ -1,0 +1,22 @@
+# Secrets / local config
+.env
+*.env
+
+# Private keys / certs
+*.key
+*.pem
+
+# Logs
+*.log
+
+# OS / editor
+.DS_Store
+*.swp
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Node
+node_modules/

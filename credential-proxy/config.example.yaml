@@ -1,0 +1,46 @@
+# /etc/openclaw-secrets/credential-proxy.yaml
+# Root-owned or openclaw-secrets readable.
+# Add new services by adding stanzas and restarting credential-proxy.
+
+listen:
+  host: 127.0.0.1
+  port: 18443
+  # Allowed peer IPs for accepted connections.
+  # With iptables OUTPUT REDIRECT, you'll usually see 127.0.0.1,
+  # but some setups preserve the original source. Keep both if needed.
+  allowed_sources:
+    - 127.0.0.1
+    - ::1
+    # Add your VPS public IP if iptables REDIRECT preserves it as source:
+    # - <VPS_PUBLIC_IP>
+
+certs:
+  dir: /etc/openclaw-secrets/certs
+  ca_key: /etc/openclaw-secrets/certs/ca.key
+  ca_crt: /etc/openclaw-secrets/certs/ca.crt
+  hosts_dir: /etc/openclaw-secrets/certs/hosts
+
+logging:
+  dir: /var/log/credential-proxy
+  file: credential-proxy.log
+  level: INFO
+
+services:
+  telegram:
+    match_sni:
+      - api.telegram.org
+    upstream_host: api.telegram.org
+    upstream_port: 443
+    mode: telegram_path_token
+    token_file: /etc/openclaw-secrets/telegram_token
+
+# Future examples:
+#  openai:
+#    match_sni:
+#      - api.openai.com
+#    upstream_host: api.openai.com
+#    upstream_port: 443
+#    mode: bearer_header
+#    header_name: Authorization
+#    header_value_prefix: "Bearer "
+#    secret_file: /etc/openclaw-secrets/openai_key
