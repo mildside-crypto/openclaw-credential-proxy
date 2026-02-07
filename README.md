@@ -45,4 +45,4 @@ This repo intentionally does **not** include any real secrets. Do not commit:
 
 ## Licence
 
-TBD (choose MIT/Apache-2.0) — happy to default to MIT if you want it maximally reusable.
+MIT — see `LICENSE`.
