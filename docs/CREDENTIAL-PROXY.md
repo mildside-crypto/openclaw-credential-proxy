@@ -28,16 +28,19 @@ This document reflects the **current deployed state** on this host (Telegram via
               Real API (e.g., api.telegram.org)
 ```
 
-## Current Status (Telegram)
+## Current Status (Telegram + Brave)
 
 **Implemented:**
 - ✅ Telegram bot credential isolation
+- ✅ Brave Search credential isolation (header injection)
 - ✅ Transparent HTTPS proxy with TLS termination
 - ✅ iptables traffic interception (IPv4 + IPv6)
 - ✅ systemd service management (`credential-proxy.service`)
 - ✅ Log rotation (7-day retention)
 - ✅ Credential storage with proper permissions
 - ✅ **DNS drift mitigation:** iptables rules are regenerated/applied on proxy service start
+- ✅ **Missing SNI mitigation:** when TLS SNI is missing, proxy routes by HTTP `Host` header
+- ✅ Telegram `getUpdates` long-polling supported (higher upstream timeout)
 
 **Known gaps / TODO:**
 - ✅ (fixed) iptables idempotency: interception now uses a dedicated `CREDPROXY` chain so restarts do not accumulate duplicate rules
