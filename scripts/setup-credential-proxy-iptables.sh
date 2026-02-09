@@ -7,12 +7,14 @@
 
 set -euo pipefail
 
-echo "Generating iptables rules for credential proxy from current DNS..."
+echo "Applying iptables rules for credential proxy from current DNS (chain-based, ordered rules)..."
 
-sudo /usr/local/sbin/gen-credential-proxy-iptables /etc/credential-proxy/iptables.rules
-sudo iptables-restore --noflush /etc/credential-proxy/iptables.rules
-sudo ip6tables-restore --noflush /etc/credential-proxy/iptables.v6.rules
+# Canonical apply path: dedicated nat chain + ordered OUTPUT rules.
+# Supports multiple hosts via HOSTS (comma/space separated).
+# Examples:
+#   HOSTS="api.telegram.org api.search.brave.com" sudo /usr/local/sbin/apply-credential-proxy-iptables
+sudo /usr/local/sbin/apply-credential-proxy-iptables
 
-echo "✅ iptables rules applied (v4 + v6)"
+echo "✅ iptables rules applied (v4 + v6) via apply-credential-proxy-iptables"
 echo ""
 echo "Verify with: sudo iptables -t nat -L OUTPUT -v --line-numbers"

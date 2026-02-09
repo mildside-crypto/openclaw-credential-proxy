@@ -449,7 +449,10 @@ class Proxy:
         sni = None
         try:
             if sslobj is not None:
-                sni = sslobj.server_hostname
+                # NOTE: On some transparent interception paths, SNI may be missing.
+                # Python's server-side ssl_object often does not reliably expose the
+                # client's SNI as `server_hostname`, so we treat this as best-effort.
+                sni = getattr(sslobj, "server_hostname", None)
         except Exception:
             sni = None
         sni_l = (sni or "").lower()
@@ -459,21 +462,29 @@ class Proxy:
                 self.logger.warning(f"Reject source={peer_ip} sni={sni_l}")
                 writer.close(); await writer.wait_closed(); return
 
+            # Read HTTP request first so we can route by Host header when SNI is missing.
+            method, path, headers, body = await self._read_http_request(reader)
+
+            host_hdr = ""
+            for k, v in headers.items():
+                if k.lower() == "host":
+                    host_hdr = v.split(":", 1)[0].strip().lower()
+                    break
+
             svc = None
             if sni_l:
                 svc = self.sni_map.get(sni_l)
-            else:
-                # Fallback when SNI is missing (can happen in some transparent redirect scenarios).
-                # Safe default: only if exactly one service is configured.
-                if len(self.services) == 1:
-                    svc = self.services[0]
-                    self.logger.info(f"SNI missing; falling back to service={svc.name}")
+            if svc is None and host_hdr:
+                svc = self.sni_map.get(host_hdr)
+
+            # Final fallback: only if exactly one service is configured.
+            if svc is None and len(self.services) == 1:
+                svc = self.services[0]
+                self.logger.info(f"SNI missing; falling back to service={svc.name}")
 
             if svc is None:
-                self.logger.warning(f"No service for sni={sni_l}; closing")
+                self.logger.warning(f"No service for sni={sni_l} host={host_hdr}; closing")
                 writer.close(); await writer.wait_closed(); return
-
-            method, path, headers, body = await self._read_http_request(reader)
 
             # Sanitised log
             method_name = path.split("/")[-1].split("?")[0]

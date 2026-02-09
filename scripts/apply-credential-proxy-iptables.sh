@@ -11,7 +11,9 @@ set -euo pipefail
 
 PORT=${PORT:-18443}
 PROXY_UID=${PROXY_UID:-openclaw-secrets}
-HOST=${HOST:-api.telegram.org}
+# Back-compat: HOST (single hostname) or HOSTS (whitespace/comma separated).
+HOST=${HOST:-}
+HOSTS_RAW=${HOSTS:-${HOST:-api.telegram.org}}
 CHAIN=${CHAIN:-CREDPROXY}
 LOCK=${LOCK:-/var/lock/credproxy-iptables.lock}
 
@@ -54,17 +56,25 @@ apply_v4() {
   iptables -t nat -D OUTPUT -p tcp --dport 443 -j "$CHAIN" 2>/dev/null || true
   iptables -t nat -I OUTPUT 2 -p tcp --dport 443 -j "$CHAIN"
 
-  # Populate chain
-  local ips
-  ips=$(resolve_v4 "$HOST" || true)
-  if [[ -z "$ips" ]]; then
-    echo "WARN: no A records for $HOST (v4 chain left empty)" >&2
-    return 0
+  # Populate chain from all configured hosts
+  local hosts ips
+  hosts=$(echo "$HOSTS_RAW" | tr ',' ' ')
+  local any=false
+  for h in $hosts; do
+    ips=$(resolve_v4 "$h" || true)
+    if [[ -z "$ips" ]]; then
+      echo "WARN: no A records for $h (v4)" >&2
+      continue
+    fi
+    any=true
+    while read -r ip; do
+      [[ -z "$ip" ]] && continue
+      iptables -t nat -A "$CHAIN" -p tcp -d "$ip" --dport 443 -j REDIRECT --to-ports "$PORT"
+    done <<< "$ips"
+  done
+  if [[ "$any" != true ]]; then
+    echo "WARN: no IPv4 A records resolved for any hosts: $HOSTS_RAW (v4 chain left empty)" >&2
   fi
-  while read -r ip; do
-    [[ -z "$ip" ]] && continue
-    iptables -t nat -A "$CHAIN" -p tcp -d "$ip" --dport 443 -j REDIRECT --to-ports "$PORT"
-  done <<< "$ips"
 }
 
 apply_v6() {
@@ -80,19 +90,27 @@ apply_v6() {
   ip6tables -t nat -D OUTPUT -p tcp --dport 443 -j "$CHAIN" 2>/dev/null || true
   ip6tables -t nat -I OUTPUT 2 -p tcp --dport 443 -j "$CHAIN"
 
-  local ips
-  ips=$(resolve_v6 "$HOST" || true)
-  if [[ -z "$ips" ]]; then
-    echo "INFO: no AAAA records for $HOST (v6 chain left empty)" >&2
-    return 0
+  local hosts ips
+  hosts=$(echo "$HOSTS_RAW" | tr ',' ' ')
+  local any=false
+  for h in $hosts; do
+    ips=$(resolve_v6 "$h" || true)
+    if [[ -z "$ips" ]]; then
+      echo "INFO: no AAAA records for $h (v6)" >&2
+      continue
+    fi
+    any=true
+    while read -r ip; do
+      [[ -z "$ip" ]] && continue
+      ip6tables -t nat -A "$CHAIN" -p tcp -d "$ip" --dport 443 -j REDIRECT --to-ports "$PORT"
+    done <<< "$ips"
+  done
+  if [[ "$any" != true ]]; then
+    echo "INFO: no IPv6 AAAA records resolved for any hosts: $HOSTS_RAW (v6 chain left empty)" >&2
   fi
-  while read -r ip; do
-    [[ -z "$ip" ]] && continue
-    ip6tables -t nat -A "$CHAIN" -p tcp -d "$ip" --dport 443 -j REDIRECT --to-ports "$PORT"
-  done <<< "$ips"
 }
 
 apply_v4
 apply_v6
 
-echo "Applied credproxy rules: chain=$CHAIN host=$HOST port=$PORT proxy_uid=$PROXY_UID(uid=$UID_NUM)" >&2
+echo "Applied credproxy rules: chain=$CHAIN hosts=$HOSTS_RAW port=$PORT proxy_uid=$PROXY_UID(uid=$UID_NUM)" >&2
