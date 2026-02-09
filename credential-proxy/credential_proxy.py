@@ -333,11 +333,27 @@ class Proxy:
 
         return method, path, headers, body
 
-    async def _forward(self, upstream_host: str, upstream_port: int, method: str, path: str, headers: dict[str, str], body: bytes) -> tuple[int, dict[str, str], bytes]:
+    async def _forward(
+        self,
+        upstream_host: str,
+        upstream_port: int,
+        method: str,
+        path: str,
+        headers: dict[str, str],
+        body: bytes,
+        *,
+        timeout: float = 30.0,
+    ) -> tuple[int, dict[str, str], bytes]:
+        """Forward request upstream and return (status, headers, body).
+
+        Note: some upstreams (notably Telegram getUpdates long-poll) hold the
+        connection open for >30s. Callers should pass a higher timeout.
+        """
+
         ssl_ctx = ssl.create_default_context()
         reader, writer = await asyncio.wait_for(
             asyncio.open_connection(upstream_host, upstream_port, ssl=ssl_ctx, server_hostname=upstream_host),
-            timeout=30.0,
+            timeout=timeout,
         )
         try:
             # Build HTTP/1.1 request
@@ -364,7 +380,7 @@ class Proxy:
             # Read until headers
             resp = b""
             while b"\r\n\r\n" not in resp:
-                chunk = await asyncio.wait_for(reader.read(4096), timeout=30.0)
+                chunk = await asyncio.wait_for(reader.read(4096), timeout=timeout)
                 if not chunk:
                     break
                 resp += chunk
@@ -405,7 +421,7 @@ class Proxy:
             elif content_length is not None:
                 # read remaining
                 while len(body_bytes) < content_length:
-                    chunk = await asyncio.wait_for(reader.read(min(65536, content_length - len(body_bytes))), timeout=30.0)
+                    chunk = await asyncio.wait_for(reader.read(min(65536, content_length - len(body_bytes))), timeout=timeout)
                     if not chunk:
                         break
                     body_bytes += chunk
@@ -504,7 +520,18 @@ class Proxy:
             else:
                 raise RuntimeError(f"Unknown mode: {svc.mode}")
 
-            status, resp_headers, resp_body = await self._forward(svc.upstream_host, svc.upstream_port, method, path, headers, body)
+            # Telegram getUpdates uses long-polling (can hold the connection open for a while).
+            # Use a higher timeout so we don't abort healthy long-poll requests.
+            fwd_timeout = 90.0 if (svc.name == "telegram" and "/getUpdates" in path) else 30.0
+            status, resp_headers, resp_body = await self._forward(
+                svc.upstream_host,
+                svc.upstream_port,
+                method,
+                path,
+                headers,
+                body,
+                timeout=fwd_timeout,
+            )
 
             # Build response
             resp_lines = [f"HTTP/1.1 {status} OK"]
